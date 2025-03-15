@@ -1,0 +1,16 @@
+[project]
+name = "quadratic-dataset"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ipykernel>=6.29.5",
+    "matplotlib>=3.10.1",
+    "numpy>=1.26.4",
+    "perlin-numpy",
+    "scikit-learn>=1.6.1",
+]
+
+[tool.uv.sources]
+perlin-numpy = { git = "https://github.com/pvigier/perlin-numpy" }
