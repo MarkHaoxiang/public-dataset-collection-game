@@ -50,9 +50,10 @@ class PublicDatasetsGame[ObsType, Dataset](
         consumers: Sequence[Consumer[ObsType, Dataset]],
         collectors: Sequence[Collector[Dataset]],
         mechanism: Mechanism,
-        dataset_update_method: Literal["extend", "replace"] = "extend",
+        dataset_update_method: Literal["extend", "replace"] = "replace",
         max_steps: int = 500,
         infinite_horizon: bool = True,
+        agent_budget_per_collector_step: float = 100.0,
     ):
         super().__init__()
 
@@ -69,9 +70,10 @@ class PublicDatasetsGame[ObsType, Dataset](
         self._dataset_update_method = dataset_update_method
         self._max_steps = max_steps
         self._infinite_horizon = infinite_horizon
-        self._step = 0
+        self._agent_budget_per_collector_step = agent_budget_per_collector_step
 
         # Stateful
+        self._step = 0
         self._datasets: list[Dataset] = []
 
     def reset(
@@ -117,11 +119,14 @@ class PublicDatasetsGame[ObsType, Dataset](
         contributions = np.zeros(
             (self.num_agents, self.num_collectors), dtype=np.float32
         )
-        for i, action in enumerate(actions.values()):
+        for i, agent in enumerate(actions.keys()):
+            action = actions[agent]
             assert action.shape == (self.num_collectors,), (
                 f"Invalid action shape {action.shape} but expected {(self.num_collectors,)}"
             )
-            contributions[i] = action
+            contributions[i] = np.clip(
+                action, 0.0, self._agent_budget_per_collector_step
+            )
 
         # Agent funding
         funding = self.mechanism(contributions)
@@ -169,7 +174,10 @@ class PublicDatasetsGame[ObsType, Dataset](
     @functools.lru_cache(maxsize=None)
     def action_space(self, agent: AgentID):
         return s.Box(
-            low=0.0, high=np.inf, shape=(self.num_collectors,), dtype=np.float32
+            low=0.0,
+            high=self._agent_budget_per_collector_step,
+            shape=(self.num_collectors,),
+            dtype=np.float32,
         )
 
     @property

@@ -11,6 +11,8 @@ dependencies = [
     "perlin-numpy",
     "pettingzoo>=1.24.3",
     "scikit-learn>=1.6.1",
+    "torchrl>=0.7.2",
+    "tqdm>=4.67.1",
 ]
 
 [build-system]
