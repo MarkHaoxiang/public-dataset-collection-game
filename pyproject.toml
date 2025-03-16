@@ -1,5 +1,5 @@
 [project]
-name = "quadratic-dataset"
+name = "public-datasets-game"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -9,7 +9,19 @@ dependencies = [
     "matplotlib>=3.10.1",
     "numpy>=1.26.4",
     "perlin-numpy",
+    "pettingzoo>=1.24.3",
     "scikit-learn>=1.6.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.14.1",
+    "pytest>=8.3.4",
+    "ruff>=0.9.3",
 ]
 
 [tool.uv.sources]
