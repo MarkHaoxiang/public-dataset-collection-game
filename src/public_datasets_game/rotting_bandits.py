@@ -13,6 +13,7 @@ from public_datasets_game.pdg import (
     Reward,
     Info,
     AgentID,
+    RewardAllocationType,
 )
 
 
@@ -107,6 +108,7 @@ class RottingBanditsGame(PublicDatasetsGame[ObsType, Dataset]):
         cost_per_play: float = 0.5,
         infinite_horizon: bool = True,
         decay_rate: int = 10,
+        reward_allocation: RewardAllocationType = "individual",
     ):
         self.rng = np.random.default_rng()
         self.consumers: list[RottingBanditsConsumer] = []
@@ -130,6 +132,7 @@ class RottingBanditsGame(PublicDatasetsGame[ObsType, Dataset]):
             dataset_update_method="replace",
             max_steps=max_steps,
             infinite_horizon=infinite_horizon,
+            reward_allocation=reward_allocation,
         )
 
     def reset(self, seed=None, options=None) -> tuple[dict[AgentID, ObsType], Info]:
@@ -189,8 +192,8 @@ class SlidingWindowObsWrapper(PublicDatasetsGame[SWObsType, Dataset]):
             window_returns: list[list[float]] = [
                 [
                     window.sum()
-                    / min(len(window), max(1, self.consumer.num_plays_counter[i]))
-                    for i, window in enumerate(self.windows[arm])
+                    / min(len(window), max(1, self.consumer.num_plays_counter[arm]))
+                    for window in self.windows[arm]
                 ]
                 for arm in range(self.consumer.num_arms)
             ]
@@ -234,6 +237,7 @@ class SlidingWindowObsWrapper(PublicDatasetsGame[SWObsType, Dataset]):
             dataset_update_method=env._dataset_update_method,
             max_steps=env._max_steps,
             infinite_horizon=env._infinite_horizon,
+            reward_allocation=env._reward_allocation,
         )
         self.env = env
 

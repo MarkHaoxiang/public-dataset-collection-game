@@ -16,6 +16,8 @@ Truncated = bool
 ActionType = npt.NDArray[np.float32]
 Info = dict[AgentID, dict[Any, Any]]
 
+RewardAllocationType = Literal["individual", "collaborative"]
+
 
 class Consumer[ObsType, Dataset]:
     def __init__(self) -> None:
@@ -50,6 +52,7 @@ class PublicDatasetsGame[ObsType, Dataset](
         consumers: Sequence[Consumer[ObsType, Dataset]],
         collectors: Sequence[Collector[Dataset]],
         mechanism: Mechanism,
+        reward_allocation: RewardAllocationType = "individual",
         dataset_update_method: Literal["extend", "replace"] = "replace",
         max_steps: int = 500,
         infinite_horizon: bool = True,
@@ -67,6 +70,7 @@ class PublicDatasetsGame[ObsType, Dataset](
             agent: self.consumers[i] for i, agent in enumerate(self.agents)
         }
 
+        self._reward_allocation = reward_allocation
         self._dataset_update_method = dataset_update_method
         self._max_steps = max_steps
         self._infinite_horizon = infinite_horizon
@@ -152,7 +156,19 @@ class PublicDatasetsGame[ObsType, Dataset](
         }
 
         obs = {k: v[0] for k, v in training_results.items()}
-        rewards = {k: v[1] - actions[k].sum() for k, v in training_results.items()}
+
+        match self._reward_allocation:
+            case "individual":
+                rewards = {
+                    k: v[1] - actions[k].sum() for k, v in training_results.items()
+                }
+            case "collaborative":
+                team_reward = sum(
+                    [v[1] - actions[k].sum() for k, v in training_results.items()]
+                )
+                team_reward /= self.num_agents
+                rewards = {k: team_reward for k in training_results.keys()}
+
         infos = {k: v[2] for k, v in training_results.items()}
 
         end = self._step >= self._max_steps
