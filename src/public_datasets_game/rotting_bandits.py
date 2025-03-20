@@ -14,6 +14,7 @@ from public_datasets_game.pdg import (
     Info,
     AgentID,
     RewardAllocationType,
+    DeficitResolutionMethod,
 )
 
 
@@ -109,6 +110,7 @@ class RottingBanditsGame(PublicDatasetsGame[ObsType, Dataset]):
         infinite_horizon: bool = True,
         decay_rate: int = 10,
         reward_allocation: RewardAllocationType = "individual",
+        deficit_resolution: DeficitResolutionMethod = "ignore",
     ):
         self.rng = np.random.default_rng()
         self.consumers: list[RottingBanditsConsumer] = []
@@ -133,6 +135,7 @@ class RottingBanditsGame(PublicDatasetsGame[ObsType, Dataset]):
             max_steps=max_steps,
             infinite_horizon=infinite_horizon,
             reward_allocation=reward_allocation,
+            deficit_resolution=deficit_resolution,
         )
 
     def reset(self, seed=None, options=None) -> tuple[dict[AgentID, ObsType], Info]:
@@ -238,6 +241,7 @@ class SlidingWindowObsWrapper(PublicDatasetsGame[SWObsType, Dataset]):
             max_steps=env._max_steps,
             infinite_horizon=env._infinite_horizon,
             reward_allocation=env._reward_allocation,
+            deficit_resolution=env._deficit_resolution,
         )
         self.env = env
 

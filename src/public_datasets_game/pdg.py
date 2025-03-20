@@ -17,6 +17,8 @@ ActionType = npt.NDArray[np.float32]
 Info = dict[AgentID, dict[Any, Any]]
 
 RewardAllocationType = Literal["individual", "collaborative"]
+DeficitResolutionMethod = Literal["tax", "ignore"]
+DatasetUpdateMethod = Literal["extend", "replace"]
 
 
 class Consumer[ObsType, Dataset]:
@@ -53,7 +55,8 @@ class PublicDatasetsGame[ObsType, Dataset](
         collectors: Sequence[Collector[Dataset]],
         mechanism: Mechanism,
         reward_allocation: RewardAllocationType = "individual",
-        dataset_update_method: Literal["extend", "replace"] = "replace",
+        dataset_update_method: DatasetUpdateMethod = "replace",
+        deficit_resolution: DeficitResolutionMethod = "ignore",
         max_steps: int = 500,
         infinite_horizon: bool = True,
         agent_budget_per_collector_step: float = 100.0,
@@ -70,6 +73,7 @@ class PublicDatasetsGame[ObsType, Dataset](
             agent: self.consumers[i] for i, agent in enumerate(self.agents)
         }
 
+        self._deficit_resolution = deficit_resolution
         self._reward_allocation = reward_allocation
         self._dataset_update_method = dataset_update_method
         self._max_steps = max_steps
@@ -138,6 +142,17 @@ class PublicDatasetsGame[ObsType, Dataset](
             f"Invalid funding shape {funding.shape} but expected {(self.num_collectors,)}"
         )
 
+        contributions_total = contributions.sum()
+        funding_total = funding.sum()
+        tax_per_agent = 0
+        deficit = funding_total - contributions_total
+        if deficit > 0:
+            match self._deficit_resolution:
+                case "tax":
+                    tax_per_agent = deficit / self.num_agents
+                case "ignore":
+                    tax_per_agent = 0
+
         # Step collectors
         datasets = [
             collector.step(funding[i]) for i, collector in enumerate(self.collectors)
@@ -160,13 +175,15 @@ class PublicDatasetsGame[ObsType, Dataset](
         match self._reward_allocation:
             case "individual":
                 rewards = {
-                    k: v[1] - actions[k].sum() for k, v in training_results.items()
+                    k: v[1] - actions[k].sum() - tax_per_agent
+                    for k, v in training_results.items()
                 }
             case "collaborative":
                 team_reward = sum(
                     [v[1] - actions[k].sum() for k, v in training_results.items()]
                 )
                 team_reward /= self.num_agents
+                team_reward -= tax_per_agent
                 rewards = {k: team_reward for k in training_results.keys()}
 
         infos = {k: v[2] for k, v in training_results.items()}
