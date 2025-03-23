@@ -123,24 +123,23 @@ class PublicDatasetsGame[ObsType, Dataset](
             )
         self._step += 1
 
-        # Agent contributions
-        contributions = np.zeros(
-            (self.num_agents, self.num_collectors), dtype=np.float32
+        # Funding public goods
+        action_shape = self.mechanism.get_action_space(self.num_collectors)[2]
+        joint_actions = np.zeros(
+            (self.num_agents, *action_shape),
+            dtype=np.float32,
         )
-        for i, agent in enumerate(actions.keys()):
-            action = actions[agent]
-            assert action.shape == (self.num_collectors,), (
-                f"Invalid action shape {action.shape} but expected {(self.num_collectors,)}"
+        agent_idx_map: dict[AgentID, int] = {}
+        for i, (agent, action) in enumerate(actions.items()):
+            assert action.shape == action_shape, (
+                f"Invalid action shape {action.shape} but expected {action_shape}"
             )
-            contributions[i] = np.clip(
-                action, 0.0, self._agent_budget_per_collector_step
-            )
+            joint_actions[i] = action
+            agent_idx_map[agent] = i
 
-        # Agent funding
-        funding = self.mechanism(contributions)
-        assert funding.shape == (self.num_collectors,), (
-            f"Invalid funding shape {funding.shape} but expected {(self.num_collectors,)}"
-        )
+        funding, contributions = self.mechanism(joint_actions)
+        assert contributions.shape == (self.num_agents,)
+        assert funding.shape == (self.num_collectors,)
 
         contributions_total = contributions.sum()
         funding_total = funding.sum()
@@ -175,12 +174,15 @@ class PublicDatasetsGame[ObsType, Dataset](
         match self._reward_allocation:
             case "individual":
                 rewards = {
-                    k: v[1] - actions[k].sum() - tax_per_agent
+                    k: v[1] - contributions[agent_idx_map[k]] - tax_per_agent
                     for k, v in training_results.items()
                 }
             case "collaborative":
                 team_reward = sum(
-                    [v[1] - actions[k].sum() for k, v in training_results.items()]
+                    [
+                        v[1] - contributions[agent_idx_map[k]]
+                        for k, v in training_results.items()
+                    ]
                 )
                 team_reward /= self.num_agents
                 team_reward -= tax_per_agent
@@ -206,10 +208,12 @@ class PublicDatasetsGame[ObsType, Dataset](
 
     @functools.lru_cache(maxsize=None)
     def action_space(self, agent: AgentID):
+        low, high, shape = self.mechanism.get_action_space(self.num_collectors)
+
         return s.Box(
-            low=0.0,
-            high=self._agent_budget_per_collector_step,
-            shape=(self.num_collectors,),
+            low=low,
+            high=high,
+            shape=shape,
             dtype=np.float32,
         )
 

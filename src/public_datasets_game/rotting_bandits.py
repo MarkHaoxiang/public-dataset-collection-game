@@ -86,6 +86,7 @@ class RottingBanditsCollector(Collector[Dataset]):
     def __init__(self, cost_per_play: float):
         super().__init__()
         self.cost_per_play = cost_per_play
+        self._funds = 0.0
 
     def step(self, funding: float) -> Dataset:
         self._funds += funding
