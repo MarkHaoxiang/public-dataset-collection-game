@@ -87,6 +87,8 @@ class BayesOptConsumer(Consumer[ObsType, Dataset]):
         self.collected = np.zeros(self.X.shape[0], dtype=np.int32)
         self.collected[initial_collection] = 1
 
+        self._previous_best = max(self.Y[self.collected])
+
     def compute_observation(self, datasets: list[Dataset]):
         for dataset in datasets:
             self.collected[dataset] = 1
@@ -115,11 +117,15 @@ class BayesOptConsumer(Consumer[ObsType, Dataset]):
         return np.array(collector_improvement, dtype=np.float32)
 
     def step(self, datasets: list[Dataset]):
-        return self.compute_observation(datasets), {}
+        r = max(self.Y[self.collected]) - self._previous_best
+        self._previous_best = max(self.Y[self.collected])
+
+        return self.compute_observation(datasets), r, {}
 
     def reset(self, seed):
         self.collected = np.zeros(self.X.shape[0], dtype=np.int32)
         self.collected[self.initial_collection] = 1
+        self._previous_best = max(self.Y[self.collected])
 
         return self.compute_observation([]), {}
 

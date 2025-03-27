@@ -113,12 +113,14 @@ class RottingBanditsGame(PublicDatasetsGame[ObsType, Dataset]):
         reward_allocation: RewardAllocationType = "individual",
         deficit_resolution: DeficitResolutionMethod = "tax",
         normalise_action_space: bool = False,
+        randomise_on_reset: bool = True,
     ):
         self.rng = np.random.default_rng()
         self.consumers: list[RottingBanditsConsumer] = []
         self.collectors: list[RottingBanditsCollector] = []
         self.num_arms = num_arms
         self.k = decay_rate
+        self.randomise_on_reset = randomise_on_reset
 
         for _ in range(num_bandits):
             k, theta, sigma = self._generate_random_agent(num_arms)
@@ -146,11 +148,12 @@ class RottingBanditsGame(PublicDatasetsGame[ObsType, Dataset]):
         self.rng = np.random.default_rng(seed)
 
         # Reset the distribution of arms for each consumer
-        for i in range(self.num_agents):
-            k, theta, sigma = self._generate_random_agent(self.num_arms)
-            self.consumers[i].k = k
-            self.consumers[i].theta = theta
-            self.consumers[i].sigma = sigma
+        if self.randomise_on_reset or seed is not None:
+            for i in range(self.num_agents):
+                k, theta, sigma = self._generate_random_agent(self.num_arms)
+                self.consumers[i].k = k
+                self.consumers[i].theta = theta
+                self.consumers[i].sigma = sigma
 
         return obs, info
 

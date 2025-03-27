@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Sequence, Literal, Any
+from typing import Sequence, Any
 import numpy as np
 import numpy.typing as npt
 
