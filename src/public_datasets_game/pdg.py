@@ -61,6 +61,7 @@ class PublicDatasetsGame[ObsType, Dataset](
         max_steps: int = 500,
         infinite_horizon: bool = True,
         normalise_action_space: bool = False,
+        return_funds_info: bool = True,
     ):
         super().__init__()
 
@@ -79,6 +80,7 @@ class PublicDatasetsGame[ObsType, Dataset](
         self._dataset_update_method = dataset_update_method
         self._max_steps = max_steps
         self._infinite_horizon = infinite_horizon
+        self._return_funds_info = return_funds_info
 
         self._normalise_action_space = normalise_action_space
         self.action_space_settings = self.mechanism.get_action_space(
@@ -98,11 +100,20 @@ class PublicDatasetsGame[ObsType, Dataset](
             agent_obs, agent_info = consumer.reset(seed)
             obs[agent] = agent_obs
             info[agent] = agent_info
+
+        if self._return_funds_info:
+            additional_info = self._make_info(
+                np.zeros(self.num_agents, dtype=np.float32),
+                np.zeros(self.num_collectors, dtype=np.float32),
+                {agent: i for i, agent in enumerate(self.agents)},
+            )
+            for agent in self.agents:
+                info[agent].update(additional_info[agent])
+
         for collector in self.collectors:
             collector.reset(seed)
 
         self._step = 0
-
         return obs, info
 
     def step(
@@ -201,13 +212,18 @@ class PublicDatasetsGame[ObsType, Dataset](
                 team_reward -= tax_per_agent
                 rewards = {k: team_reward for k in training_results.keys()}
 
-        infos = {k: v[2] for k, v in training_results.items()}
+        info = {k: v[2] for k, v in training_results.items()}
+
+        if self._return_funds_info:
+            additional_info = self._make_info(contributions, funding, agent_idx_map)
+            for agent in self.agents:
+                info[agent].update(additional_info[agent])
 
         end = self._step >= self._max_steps
         truncated = finish if end else cont
         terminated = finish if end and not self._infinite_horizon else cont
 
-        return obs, rewards, terminated, truncated, infos
+        return obs, rewards, terminated, truncated, info
 
     def observe(self, agent: AgentID) -> ObsType:
         consumer = self._get_consumer(agent)
@@ -218,6 +234,20 @@ class PublicDatasetsGame[ObsType, Dataset](
 
     def _get_consumer(self, agent: AgentID) -> Consumer[ObsType, Dataset]:
         return self.agent_to_consumer[agent]
+
+    def _make_info(
+        self,
+        contributions: npt.NDArray[np.float32],
+        funding: npt.NDArray[np.float32],
+        agent_idx_map: dict[AgentID, int],
+    ) -> Info:
+        info: Info = {agent: {} for agent in self.agents}
+
+        # Contribution Information
+        for agent, idx in agent_idx_map.items():
+            info[agent] = {"contribution": contributions[idx], "funding": funding}
+
+        return info
 
     @functools.lru_cache(maxsize=None)
     def action_space(self, agent: AgentID):

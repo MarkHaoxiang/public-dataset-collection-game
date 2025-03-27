@@ -114,6 +114,7 @@ class RottingBanditsGame(PublicDatasetsGame[ObsType, Dataset]):
         deficit_resolution: DeficitResolutionMethod = "tax",
         normalise_action_space: bool = False,
         randomise_on_reset: bool = True,
+        return_funds_info: bool = True,
     ):
         self.rng = np.random.default_rng()
         self.consumers: list[RottingBanditsConsumer] = []
@@ -141,6 +142,7 @@ class RottingBanditsGame(PublicDatasetsGame[ObsType, Dataset]):
             reward_allocation=reward_allocation,
             deficit_resolution=deficit_resolution,
             normalise_action_space=normalise_action_space,
+            return_funds_info=return_funds_info,
         )
 
     def reset(self, seed=None, options=None) -> tuple[dict[AgentID, ObsType], Info]:
@@ -265,6 +267,7 @@ class SlidingWindowObsWrapper(PublicDatasetsGame[SWObsType, Dataset]):
             reward_allocation=env._reward_allocation,
             deficit_resolution=env._deficit_resolution,
             normalise_action_space=env._normalise_action_space,
+            return_funds_info=env._return_funds_info,
         )
         self.env = env
 

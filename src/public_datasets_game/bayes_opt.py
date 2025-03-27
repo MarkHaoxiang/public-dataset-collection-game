@@ -1,9 +1,11 @@
 from typing import Any
+import functools
 
 import numpy as np
 import numpy.typing as npt
+import gymnasium.spaces as s
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, ConstantKernel
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel, WhiteKernel
 from scipy.stats import norm
 
 from perlin_numpy import generate_perlin_noise_2d
@@ -43,15 +45,18 @@ class BayesOptCollector(Collector[Dataset]):
         num_datapoints = int(self._funds / self._cost_per_play)
         self._funds -= num_datapoints * self._cost_per_play
 
-        sample_partitions = self._rng.choice(
-            len(self._partitions), size=num_datapoints, p=self._probabilities
-        )
-        datapoints = np.concatenate(
-            [
-                self._rng.choice(self._partitions[p], size=1, replace=True)
-                for p in sample_partitions
-            ]
-        )
+        if num_datapoints > 0:
+            sample_partitions = self._rng.choice(
+                len(self._partitions), size=num_datapoints, p=self._probabilities
+            )
+            datapoints = np.concatenate(
+                [
+                    self._rng.choice(self._partitions[p], size=1, replace=True)
+                    for p in sample_partitions
+                ]
+            )
+        else:
+            datapoints = np.array([], dtype=np.int32)
 
         return datapoints
 
@@ -77,9 +82,9 @@ class BayesOptConsumer(Consumer[ObsType, Dataset]):
         super().__init__()
         self.X = X
         self.Y = Y
-
-        self.kernel = ConstantKernel() * RBF(
-            length_scale=1.0, length_scale_bounds=(1e-1, 1e2)
+        rbf = RBF(length_scale=0.2, length_scale_bounds="fixed")
+        self.kernel = ConstantKernel() * rbf + WhiteKernel(
+            noise_level=0.1, noise_level_bounds="fixed"
         )
         self.partition_points = partition_points
         self.collectors = collectors
@@ -87,7 +92,7 @@ class BayesOptConsumer(Consumer[ObsType, Dataset]):
         self.collected = np.zeros(self.X.shape[0], dtype=np.int32)
         self.collected[initial_collection] = 1
 
-        self._previous_best = max(self.Y[self.collected])
+        self._previous_best = max(self.Y[self.collected == 1])
 
     def compute_observation(self, datasets: list[Dataset]):
         for dataset in datasets:
@@ -96,7 +101,7 @@ class BayesOptConsumer(Consumer[ObsType, Dataset]):
 
         # Train GP
         collected_values = self.Y[self.collected == 1]
-        gpr = GaussianProcessRegressor(kernel=self.kernel)
+        gpr = GaussianProcessRegressor(kernel=self.kernel, alpha=1e-5)
         gpr.fit(collected_points, collected_values)
         best_y = collected_values.max()
 
@@ -114,18 +119,25 @@ class BayesOptConsumer(Consumer[ObsType, Dataset]):
 
             ei = sum([p * v for p, v in zip(probabilities, partition_improvement)])
             collector_improvement.append(ei)
+
+        obs = collector_improvement
+        obs.append((self.collected == 1).sum())
         return np.array(collector_improvement, dtype=np.float32)
 
     def step(self, datasets: list[Dataset]):
-        r = max(self.Y[self.collected]) - self._previous_best
-        self._previous_best = max(self.Y[self.collected])
+        obs = self.compute_observation(datasets)
 
-        return self.compute_observation(datasets), r, {}
+        new_best = self.Y[self.collected == 1].max()
+        r = new_best - self._previous_best
+
+        self._previous_best = new_best
+
+        return obs, r, {}
 
     def reset(self, seed):
         self.collected = np.zeros(self.X.shape[0], dtype=np.int32)
         self.collected[self.initial_collection] = 1
-        self._previous_best = max(self.Y[self.collected])
+        self._previous_best = max(self.Y[self.collected == 1])
 
         return self.compute_observation([]), {}
 
@@ -142,9 +154,13 @@ class BayesOptGame(PublicDatasetsGame[ObsType, Dataset]):
         max_steps: int = 500,
         infinite_horizon: bool = True,
         normalise_action_space: bool = False,
+        randomise_on_reset: bool = True,
+        cost_per_play: float = 0.5,
+        return_funds_info: bool = True,
     ):
         num_collectors = 4
         self.rng = np.random.default_rng()
+        self.randomise_on_reset = randomise_on_reset
 
         x1 = np.linspace(0, 1 - 1 / self.GRANULARITY, self.GRANULARITY)
         x2 = np.linspace(0, 1 - 1 / self.GRANULARITY, self.GRANULARITY)
@@ -174,7 +190,7 @@ class BayesOptGame(PublicDatasetsGame[ObsType, Dataset]):
 
             self.collectors.append(
                 BayesOptCollector(
-                    cost_per_play=0.5,
+                    cost_per_play=cost_per_play,
                     probabilities=probabilities,
                     partitions=partitions,
                 )
@@ -201,12 +217,18 @@ class BayesOptGame(PublicDatasetsGame[ObsType, Dataset]):
             max_steps=max_steps,
             infinite_horizon=infinite_horizon,
             normalise_action_space=normalise_action_space,
+            return_funds_info=return_funds_info,
         )
 
     def reset(self, seed=None, options=None):
-        obs, info = super().reset(seed, options)
         self.rng = np.random.default_rng(seed)
 
+        if self.randomise_on_reset or seed is not None:
+            for i in range(self.num_agents):
+                Y = self._generate_random_objective()
+                self.consumers[i].Y = Y
+
+        obs, info = super().reset(seed, options)
         return obs, info
 
     def _generate_random_objective(self) -> npt.NDArray[np.float32]:
@@ -215,10 +237,16 @@ class BayesOptGame(PublicDatasetsGame[ObsType, Dataset]):
             generate_perlin_noise_2d((self.GRANULARITY, self.GRANULARITY), (2, 2))
             .astype(np.float32)
             .flatten()
-            * 10
+            * 20
         )
 
+        Y += self.rng.normal(0, 0.1, size=Y.shape)
+
         return Y  # type: ignore
+
+    @functools.lru_cache(maxsize=None)
+    def observation_space(self, agent: str):
+        return s.Box(-np.inf, np.inf, shape=(self.num_collectors + 1,))
 
 
 def expected_improvement(
@@ -226,7 +254,7 @@ def expected_improvement(
 ):
     mu, sigma = gpr.predict(X, return_std=True)
     sigma = np.clip(sigma, 1e-9, None)
-    improvement = best_y - mu
+    improvement = mu - best_y
     Z = improvement / sigma
     ei = improvement * norm.cdf(Z) + sigma * norm.pdf(Z)
     return ei.reshape(-1, 1)
