@@ -111,7 +111,8 @@ class RottingBanditsGame(PublicDatasetsGame[ObsType, Dataset]):
         infinite_horizon: bool = True,
         decay_rate: int = 10,
         reward_allocation: RewardAllocationType = "individual",
-        deficit_resolution: DeficitResolutionMethod = "ignore",
+        deficit_resolution: DeficitResolutionMethod = "tax",
+        normalise_action_space: bool = False,
     ):
         self.rng = np.random.default_rng()
         self.consumers: list[RottingBanditsConsumer] = []
@@ -137,6 +138,7 @@ class RottingBanditsGame(PublicDatasetsGame[ObsType, Dataset]):
             infinite_horizon=infinite_horizon,
             reward_allocation=reward_allocation,
             deficit_resolution=deficit_resolution,
+            normalise_action_space=normalise_action_space,
         )
 
     def reset(self, seed=None, options=None) -> tuple[dict[AgentID, ObsType], Info]:
@@ -170,11 +172,17 @@ SWObsType = npt.NDArray[np.float32]
 
 class SlidingWindowObsWrapper(PublicDatasetsGame[SWObsType, Dataset]):
     class _SlidingWindowObsConsumer(Consumer[SWObsType, Dataset]):
-        def __init__(self, consumer: RottingBanditsConsumer, window_sizes: list[int]):
+        def __init__(
+            self,
+            consumer: RottingBanditsConsumer,
+            window_sizes: list[int],
+            flatten_obs: bool,
+        ):
             super().__init__()
             self.consumer = consumer
             self.window_sizes = window_sizes
             self.num_windows = len(self.window_sizes)
+            self.flatten_obs = flatten_obs
 
             self._reset_windows()
 
@@ -202,7 +210,14 @@ class SlidingWindowObsWrapper(PublicDatasetsGame[SWObsType, Dataset]):
                 for arm in range(self.consumer.num_arms)
             ]
 
-            return np.array(window_returns, dtype=np.float32)
+            wrapped_obs = np.array(window_returns, dtype=np.float32)
+            if obs is None:
+                return_obs = np.ones_like(wrapped_obs, dtype=np.float32)
+            else:
+                return_obs = wrapped_obs
+            if self.flatten_obs:
+                return_obs = return_obs.flatten()
+            return return_obs
 
         def step(self, datasets: list[Dataset]) -> tuple[SWObsType, Reward, Info]:
             obs, reward, info = self.consumer.step(datasets)
@@ -227,12 +242,15 @@ class SlidingWindowObsWrapper(PublicDatasetsGame[SWObsType, Dataset]):
                 for _ in range(self.consumer.num_arms)
             ]
 
-    def __init__(self, env: RottingBanditsGame, window_sizes: list[int]):
+    def __init__(
+        self, env: RottingBanditsGame, window_sizes: list[int], flatten_obs: bool = True
+    ):
         self.consumers = [
-            self._SlidingWindowObsConsumer(consumer, window_sizes)
+            self._SlidingWindowObsConsumer(consumer, window_sizes, flatten_obs)
             for consumer in env.consumers
         ]
         self.num_windows = len(window_sizes)
+        self.flatten_obs = flatten_obs
 
         super().__init__(
             consumers=self.consumers,
@@ -243,6 +261,7 @@ class SlidingWindowObsWrapper(PublicDatasetsGame[SWObsType, Dataset]):
             infinite_horizon=env._infinite_horizon,
             reward_allocation=env._reward_allocation,
             deficit_resolution=env._deficit_resolution,
+            normalise_action_space=env._normalise_action_space,
         )
         self.env = env
 
@@ -252,4 +271,7 @@ class SlidingWindowObsWrapper(PublicDatasetsGame[SWObsType, Dataset]):
 
     @functools.lru_cache(maxsize=None)
     def observation_space(self, agent: AgentID):
-        return s.Box(-np.inf, np.inf, shape=(self.env.num_arms, self.num_windows))
+        if not self.flatten_obs:
+            return s.Box(-np.inf, np.inf, shape=(self.env.num_arms, self.num_windows))
+        else:
+            return s.Box(-np.inf, np.inf, shape=(self.env.num_arms * self.num_windows,))

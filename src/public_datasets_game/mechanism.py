@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
-from typing import Sequence, SupportsFloat, Any
+from typing import Sequence, Literal, Any
 import numpy as np
 import numpy.typing as npt
 
 
 class Mechanism(ABC):
-    def __init__(self, agent_budget_per_collector_step: float = 100.0):
+    def __init__(self, agent_budget_per_collector_step: float = 10.0):
         super().__init__()
         self._budget_per_step = agent_budget_per_collector_step
 
@@ -23,8 +23,8 @@ class Mechanism(ABC):
     def get_action_space(
         self, num_collectors: int
     ) -> tuple[
-        SupportsFloat | npt.NDArray[Any],  # Low
-        SupportsFloat | npt.NDArray[Any],  # High
+        float | npt.NDArray[Any],  # Low
+        float | npt.NDArray[Any],  # High
         Sequence[int],  # Shape
     ]:
         return (0.0, self._budget_per_step, (num_collectors,))

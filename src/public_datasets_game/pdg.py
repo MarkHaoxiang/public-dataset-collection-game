@@ -33,6 +33,7 @@ class Consumer[ObsType, Dataset]:
     def compute_observation(self, datasets: list[Dataset]) -> ObsType:
         raise NotImplementedError()
 
+    @abstractmethod
     def reset(self, seed: int | None) -> tuple[ObsType, dict[Any, Any]]:
         raise NotImplementedError()
 
@@ -56,10 +57,10 @@ class PublicDatasetsGame[ObsType, Dataset](
         mechanism: Mechanism,
         reward_allocation: RewardAllocationType = "individual",
         dataset_update_method: DatasetUpdateMethod = "replace",
-        deficit_resolution: DeficitResolutionMethod = "ignore",
+        deficit_resolution: DeficitResolutionMethod = "tax",
         max_steps: int = 500,
         infinite_horizon: bool = True,
-        agent_budget_per_collector_step: float = 100.0,
+        normalise_action_space: bool = False,
     ):
         super().__init__()
 
@@ -78,7 +79,11 @@ class PublicDatasetsGame[ObsType, Dataset](
         self._dataset_update_method = dataset_update_method
         self._max_steps = max_steps
         self._infinite_horizon = infinite_horizon
-        self._agent_budget_per_collector_step = agent_budget_per_collector_step
+
+        self._normalise_action_space = normalise_action_space
+        self.action_space_settings = self.mechanism.get_action_space(
+            self.num_collectors
+        )
 
         # Stateful
         self._step = 0
@@ -109,6 +114,14 @@ class PublicDatasetsGame[ObsType, Dataset](
         dict[AgentID, Truncated],
         Info,
     ]:
+        if self._normalise_action_space:
+            for agent in actions.keys():
+                action = actions[agent]
+                action -= self.action_space_settings[0]
+                actions[agent] = action * (
+                    self.action_space_settings[1] - self.action_space_settings[0]
+                )
+
         cont = {agent: False for agent in self.agents}
         finish = {agent: True for agent in self.agents}
         if self._step >= self._max_steps:
@@ -208,7 +221,11 @@ class PublicDatasetsGame[ObsType, Dataset](
 
     @functools.lru_cache(maxsize=None)
     def action_space(self, agent: AgentID):
-        low, high, shape = self.mechanism.get_action_space(self.num_collectors)
+        low, high, shape = self.action_space_settings
+
+        if self._normalise_action_space:
+            low = 0.0
+            high = 1.0
 
         return s.Box(
             low=low,
